@@ -2,13 +2,10 @@ import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
 // 개별 예약 조회
-export async function GET(
-  request: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function GET(request: NextRequest, { params }: any) {
   try {
     // params 객체 바로 사용
-    const id = parseInt(context.params.id);
+    const id = parseInt(params.id);
 
     if (isNaN(id)) {
       return NextResponse.json(
@@ -39,13 +36,10 @@ export async function GET(
 }
 
 // 예약 수정
-export async function PUT(
-  request: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function PUT(request: NextRequest, { params }: any) {
   try {
     // params 객체 바로 사용
-    const id = parseInt(context.params.id);
+    const id = parseInt(params.id);
 
     if (isNaN(id)) {
       return NextResponse.json(
@@ -123,12 +117,9 @@ export async function PUT(
 }
 
 // 예약 삭제
-export async function DELETE(
-  request: NextRequest,
-  context: { params: { id: string } }
-) {
+export async function DELETE(request: NextRequest, { params }: any) {
   try {
-    const { id } = await context.params;
+    const { id } = params;
     const parsedId = parseInt(id);
 
     if (isNaN(parsedId)) {
