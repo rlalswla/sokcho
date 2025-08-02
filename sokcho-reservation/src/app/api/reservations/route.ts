@@ -1,6 +1,7 @@
 import { NextRequest, NextResponse } from "next/server";
 import { prisma } from "@/lib/prisma";
 
+// 전체 예약 목록 조회
 export async function GET() {
   try {
     const reservations = await prisma.reservation.findMany({
@@ -16,6 +17,7 @@ export async function GET() {
   }
 }
 
+// 새 예약 생성
 export async function POST(req: NextRequest) {
   try {
     const { name, startDate, endDate } = await req.json();
