@@ -57,13 +57,14 @@ export default function Home() {
       return;
     }
 
-    if (selectedStartDate >= selectedEndDate) {
+    // getDateNumber를 사용하여 정확한 날짜 비교
+    if (getDateNumber(selectedStartDate) >= getDateNumber(selectedEndDate)) {
       setError("종료일은 시작일보다 늦어야 합니다.");
       return;
     }
 
     // 다른 예약과의 충돌 확인
-    const checkConflicts = async () => {
+    const checkConflicts = () => {
       // 편집 모드일 때는 자신의 예약을 제외하고 검사
       const existingReservations =
         editMode && selectedReservation
@@ -71,13 +72,19 @@ export default function Home() {
           : reservations;
 
       for (const reservation of existingReservations) {
-        const reservStart = new Date(reservation.startDate);
-        const reservEnd = new Date(reservation.endDate);
+        const reservStart = parseDate(reservation.startDate);
+        const reservEnd = parseDate(reservation.endDate);
 
-        // 날짜 범위 충돌 검사
+        // 날짜 범위 충돌 검사 - 날짜 숫자 비교로 정확하게 검사
+        const startNum = getDateNumber(selectedStartDate);
+        const endNum = getDateNumber(selectedEndDate);
+        const reservStartNum = getDateNumber(reservStart);
+        const reservEndNum = getDateNumber(reservEnd);
+
+        // 예약 기간이 겹치는지 확인
         if (
-          (selectedStartDate <= reservEnd && selectedEndDate >= reservStart) ||
-          (reservStart <= selectedEndDate && reservEnd >= selectedStartDate)
+          (startNum <= reservEndNum && endNum >= reservStartNum) ||
+          (reservStartNum <= endNum && reservEndNum >= startNum)
         ) {
           return true; // 충돌 발견
         }
@@ -85,7 +92,7 @@ export default function Home() {
       return false; // 충돌 없음
     };
 
-    const hasConflict = await checkConflicts();
+    const hasConflict = checkConflicts();
     if (hasConflict) {
       setError("선택한 날짜에 이미 다른 예약이 있습니다.");
       return;
@@ -109,8 +116,8 @@ export default function Home() {
         },
         body: JSON.stringify({
           name: name.trim(),
-          startDate: formatDateForAPI(selectedStartDate), // 변경된 부분
-          endDate: formatDateForAPI(selectedEndDate), // 변경된 부분
+          startDate: formatDateForAPI(selectedStartDate),
+          endDate: formatDateForAPI(selectedEndDate),
         }),
       });
 
@@ -209,37 +216,39 @@ export default function Home() {
       hover: "hover:from-cyan-200 hover:to-sky-200",
     },
   ];
-
   // isDateInReservation 함수 수정
   const isDateInReservation = (date: Date) => {
     if (!Array.isArray(reservations) || reservations.length === 0) {
       return null;
     }
 
-    // 시간대 이슈 방지를 위해 날짜만 비교
-    const dateStr = formatDateForAPI(date);
+    // 문자열 비교 대신 getDateNumber를 사용해 정확한 숫자 비교
+    const dateNum = getDateNumber(date);
 
     const reservation = reservations.find((r) => {
-      const start = r.startDate; // 이미 YYYY-MM-DD 형식
-      const end = r.endDate; // 이미 YYYY-MM-DD 형식
-      return dateStr >= start && dateStr <= end;
+      // 날짜 객체로 변환하고 숫자로 비교
+      const startNum = getDateNumber(parseDate(r.startDate));
+      const endNum = getDateNumber(parseDate(r.endDate));
+
+      // 시작일과 종료일을 포함하여 비교
+      return dateNum >= startNum && dateNum <= endNum;
     });
 
     if (!reservation) return null;
 
-    // 해당 날짜가 예약의 시작일, 중간, 종료일 중 어디에 해당하는지 확인
-    const start = reservation.startDate;
-    const end = reservation.endDate;
-
-    // 예약 ID를 기반으로 색상 인덱스 계산 (일관된 색상 유지)
+    // 예약 색상 및 상태 정보
     const colorIndex = reservation.id % reservationColors.length;
     const color = reservationColors[colorIndex];
 
+    // 이 날짜가 예약의 시작일/종료일인지 확인 (문자열 비교 대신 숫자 비교)
+    const dateStr = formatDateForAPI(date);
+
     return {
       ...reservation,
-      isStart: dateStr === start,
-      isEnd: dateStr === end,
-      isMiddle: dateStr !== start && dateStr !== end,
+      isStart: dateStr === reservation.startDate,
+      isEnd: dateStr === reservation.endDate,
+      isMiddle:
+        dateStr !== reservation.startDate && dateStr !== reservation.endDate,
       color,
     };
   };
@@ -252,7 +261,7 @@ export default function Home() {
 
   const isDateInSelectedRange = (date: Date) => {
     if (!selectedStartDate || !selectedEndDate) return false;
-    return date >= selectedStartDate && date <= selectedEndDate;
+    return isDateInRange(date, selectedStartDate, selectedEndDate);
   };
 
   const isDateAvailableForSelection = (date: Date) => {
@@ -858,45 +867,75 @@ export default function Home() {
   );
 }
 
-// 날짜 포맷 및 파싱 함수 수정
+// 날짜 유틸리티 함수들을 먼저 정의합니다
+// 날짜 포맷 - YYYY-MM-DD 문자열 생성 (시간대 이슈 방지)
 const formatDateForAPI = (date: Date | null): string => {
   if (!date || isNaN(date.getTime())) return "";
 
-  // 로컬 시간대 기준으로 YYYY-MM-DD 형식 반환
+  // 로컬 시간대로 일관되게 날짜 형식 생성
   const year = date.getFullYear();
   const month = String(date.getMonth() + 1).padStart(2, "0");
   const day = String(date.getDate()).padStart(2, "0");
   return `${year}-${month}-${day}`;
 };
 
+// 날짜 파싱 함수 - 시간대 이슈 없이 항상 올바른 날짜 생성
 const parseDate = (dateString: string): Date => {
+  if (!dateString) return new Date();
+
+  // YYYY-MM-DD 형식 파싱
+  if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
+    // 이 방식은 시간대에 영향 받지 않고 날짜만 정확하게 파싱
+    const [year, month, day] = dateString.split("-").map(Number);
+
+    // 일관된 방식으로 로컬 날짜 생성 (시, 분, 초, 밀리초를 모두 0으로 설정)
+    const date = new Date(year, month - 1, day, 0, 0, 0, 0);
+    return date;
+  }
+
+  // 다른 형식의 문자열 처리 (오류 방지)
   try {
-    // 입력값 검증
-    if (!dateString || typeof dateString !== "string") {
-      console.error("Invalid date string provided:", dateString);
-      return new Date(); // 기본값 반환
-    }
-
-    // YYYY-MM-DD 형식 확인
-    if (/^\d{4}-\d{2}-\d{2}$/.test(dateString)) {
-      // 날짜 문자열을 파싱할 때 시간대 문제를 방지하기 위해 "T00:00:00" 추가
-      const [year, month, day] = dateString.split("-").map(Number);
-
-      // 시간 컴포넌트 없이 로컬 날짜로 직접 생성 (시간대 이슈 방지)
-      const date = new Date(year, month - 1, day);
-      return date;
-    } else {
-      console.warn("Date string not in YYYY-MM-DD format:", dateString);
-      // 다른 형식의 날짜 문자열 처리 시도
-      const date = new Date(dateString);
-      if (!isNaN(date.getTime())) {
-        // 날짜는 유효하지만 시간대 이슈가 있을 수 있으므로 로컬 날짜만 추출
-        return new Date(date.getFullYear(), date.getMonth(), date.getDate());
-      }
-      return new Date();
+    const tempDate = new Date(dateString);
+    // 유효한 날짜인지 확인
+    if (!isNaN(tempDate.getTime())) {
+      // 시간 정보 제거하고 날짜만 사용
+      return new Date(
+        tempDate.getFullYear(),
+        tempDate.getMonth(),
+        tempDate.getDate(),
+        0,
+        0,
+        0,
+        0
+      );
     }
   } catch (err) {
-    console.error("Error parsing date:", err);
-    return new Date();
+    console.error("날짜 파싱 오류:", err);
   }
+
+  return new Date(); // 기본값
+};
+
+// 날짜 비교 함수 - 일자만 비교 (시간 무시)
+const isSameDay = (date1: Date, date2: Date): boolean => {
+  return (
+    date1.getFullYear() === date2.getFullYear() &&
+    date1.getMonth() === date2.getMonth() &&
+    date1.getDate() === date2.getDate()
+  );
+};
+
+// 날짜를 비교 가능한 숫자로 변환 (비교 연산에 사용)
+const getDateNumber = (date: Date): number => {
+  return (
+    date.getFullYear() * 10000 + (date.getMonth() + 1) * 100 + date.getDate()
+  );
+};
+
+// 날짜가 범위 내에 있는지 확인 (시간 무시)
+const isDateInRange = (date: Date, startDate: Date, endDate: Date): boolean => {
+  const dateNum = getDateNumber(date);
+  const startNum = getDateNumber(startDate);
+  const endNum = getDateNumber(endDate);
+  return dateNum >= startNum && dateNum <= endNum;
 };
